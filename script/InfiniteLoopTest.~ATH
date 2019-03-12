@@ -1,0 +1,5 @@
+PROCREATE LOOP;
+~ATH(LOOP) {
+	print ("Hi.\n");
+	// LOOP.DIE();
+} EXECUTE(NULL);

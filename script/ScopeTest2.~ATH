@@ -1,0 +1,17 @@
+PROCREATE X 1;
+FABRICATE F(I){
+  REPLICATE X I;
+  PROCREATE I I + 1;
+  EXECUTE(G, I);
+  PROCREATE VAR; // Prevent tail call opt from deleting stack frame
+}
+
+FABRICATE G(J){
+  PROCREATE J J + 1;
+}
+
+~ATH(THIS){
+  EXECUTE(F, X);
+  print("~d\n", X);
+  THIS.DIE();
+} EXECUTE(NULL);

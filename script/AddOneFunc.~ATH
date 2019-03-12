@@ -1,0 +1,15 @@
+PROCREATE LOOP 0;
+PROCREATE A 0;
+FABRICATE ADDONE(){
+    AGGREGATE [A + 1, NULL]A;
+    BIFURCATE A[A, NULL];
+}
+~ATH(LOOP) {
+    EXECUTE (ADDONE);
+    print ("~s ", A);
+    DEBATE (A == 256) {
+        print("\n");
+        LOOP.DIE();
+    }
+} EXECUTE(NULL);
+THIS.DIE();

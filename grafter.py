@@ -20,48 +20,58 @@ class Graft(object):
         return object.__hash__((self.value, self.index))
 
     def __repr__(self):
-        return '{}({}, {})'.format(
-            self.__class__.__name__,
-            self.value,
-            self.index
-            )
+        return f'{self.__class__.__name__}({self.value}, {self.index})'
 
 
-class Grafter(object):
+class BaseParser(object):
     """Grafts tokens together. Primitive."""
     __slots__ = ()
+
     def __repr__(self):
-        attr_list = tuple([repr(getattr(self, slot)) for slot in self.__slots__])
-        attr_str = ', '.join(attr_list)
-        return '{}({})'.format(self.__class__.__name__, attr_str)
+        attr_list = tuple(repr(getattr(self, slot)) for slot in self.__slots__)
+        return f'{self.__class__.__name__}{attr_list}'
 
     def __call__(self, *args):
         raise NotImplementedError(
-            'Override Grafter call when subclassing.'
+            'Override BaseParser call when subclassing.'
             )
 
     def __add__(self, other):
         """Overload + operator to do concantenation"""
-        return Concatenator(self, other)
+        return ConcatParser(self, other)
 
     def __mul__(self, other):
         """Overload * operator to do L-R evaluation"""
-        return ExprParser(self, other)
+        return ExprsnParser(self, other)
 
     def __pow__(self, other):
         """Overload ** operator to do strict eval"""
-        return StrictExpr(self, other)
+        return StrictParser(self, other)
 
     def __or__(self, other):
         """Overload | operator to do alt selection"""
-        return Selector(self, other)
+        return SelectParser(self, other)
 
     def __xor__(self, other):
         """Overload ^ operator to do I-P evaluation"""
-        return Evaluator(self, other)
+        return WrapprParser(self, other)
+
+    def format(self, other):
+        if (
+            not isinstance(other, self.__class__)
+            and isinstance(other, (
+                ConcatParser,
+                SelectParser,
+                ExprsnParser,
+                StrictParser,
+                WrapprParser,
+                ))
+            ):
+            return f'({other!r})'
+        return repr(other)
 
 
-class Concatenator(Grafter):
+class ConcatParser(BaseParser):
     """Takes two grafters, the left and the right.
 
     It will evaluate the left grafter first, then the right grafter.
@@ -75,24 +85,21 @@ class Concatenator(Grafter):
         self.reval = right
 
     def __repr__(self):
-        return '({!r}) + ({!r})'.format(
-            self.leval,
-            self.reval
-            )
+        return f'{self.format(self.leval)} + {self.format(self.reval)}'
 
     def __call__(self, tokens, index):
         lvalue = self.leval(tokens, index)
-        if lvalue:
-            rvalue = self.reval(tokens, lvalue.index)
-            if rvalue:
-                if isinstance(lvalue.value, tuple):
-                    # Avoid recursive tuples.
-                    return Graft(lvalue.value + (rvalue.value,), rvalue.index)
-                return Graft((lvalue.value, rvalue.value), rvalue.index)
-        return None
+        if not lvalue:
+            return None
+        rvalue = self.reval(tokens, lvalue.index)
+        if not rvalue:
+            return None
+        if isinstance(lvalue.value, list): # Avoid recursive lists.
+            return Graft(lvalue.value + [rvalue.value], rvalue.index)
+        return Graft([lvalue.value, rvalue.value], rvalue.index)
 
 
-class Selector(Grafter):
+class SelectParser(BaseParser):
     """Takes two grafters, the left and the right.
 
     It will evaluate the left grafter first. If the left grafter is
@@ -106,16 +113,13 @@ class Selector(Grafter):
         self.reval = right
 
     def __repr__(self):
-        return '({!r}) | ({!r})'.format(
-            self.leval,
-            self.reval
-            )
+        return f'{self.format(self.leval)} | {self.format(self.reval)}'
 
     def __call__(self, tokens, index):
         return self.leval(tokens, index) or self.reval(tokens, index)
 
 
-class Evaluator(Grafter):
+class WrapprParser(BaseParser):
     """Takes a grafter and a function.
 
     It will evaluate the grafter as arguments for the function,
@@ -128,10 +132,7 @@ class Evaluator(Grafter):
         self.apply = func
 
     def __repr__(self):
-        return '({!r}) ^ ({!r})'.format(
-            self.graft,
-            self.apply
-            )
+        return f'{self.format(self.grafy)} ^ {self.format(self.apply)}'
 
     def __call__(self, tokens, index):
         graft = self.graft(tokens, index)
@@ -141,7 +142,7 @@ class Evaluator(Grafter):
         return None
 
 
-class ExprParser(Grafter):
+class ExprsnParser(BaseParser):
     """A grafter that evaluates expressions using two grafters.
 
     The first grafter returns a list of items, while the
@@ -157,10 +158,7 @@ class ExprParser(Grafter):
         self.group = grouper
 
     def __repr__(self):
-        return '({!r}) * ({!r})'.format(
-            self.graft,
-            self.group
-            )
+        return f'{self.format(self.graft)} * {self.format(self.group)}'
 
     def graft_next(self):
         """Concatenate the separator function and the next item
@@ -189,8 +187,8 @@ class ExprParser(Grafter):
         return self.result
 
 
-class StrictExpr(Grafter):
-    """ExprParser, but strict and doesn't allow dangling separators."""
+class StrictParser(BaseParser):
+    """ExprsnParser, but strict and doesn't allow dangling separators."""
     __slots__ = ('graft', 'group', 'result', 'graft_next')
 
     def __init__(self, grafter, grouper):
@@ -199,10 +197,7 @@ class StrictExpr(Grafter):
         self.graft_next = self.group + self.graft ^ self.eval_next
 
     def __repr__(self):
-        return '({!r}) ** ({!r})'.format(
-            self.graft,
-            self.group
-            )
+        return f'{self.format(self.graft)} ** {self.format(self.group)}'
 
     def eval_next(self, graft):
         """Using the function bound to the separator, and the
@@ -222,7 +217,7 @@ class StrictExpr(Grafter):
         return self.result
 
 
-class TokenGrafter(Token, Grafter):
+class ItemParser(Token, BaseParser):
     """A grafter wrapper around a representative token value.
 
     It will return a Graft object if it can pull a token of the
@@ -232,15 +227,14 @@ class TokenGrafter(Token, Grafter):
     __slots__ = ()
 
     def __repr__(self):
-        attr_str = ', '.join([repr(self.token), repr(self.tag)])
-        return '{}({})'.format(self.__class__.__name__, attr_str)
+        return f'{self.__class__.__name__}({self.token!r}, {self.tag!r})'
 
     def __eq__(self, other):
         try:
             return (self.token, self.tag) == (other.token, other.tag)
         except AttributeError:
             raise TypeError(
-                'Can\'t compare Token to {}'.format(other.__class__.__name__)
+                f'can\'t compare Token to {other.__class__.__name__}'
                 )
 
     def __hash__(self):
@@ -248,17 +242,13 @@ class TokenGrafter(Token, Grafter):
         return object.__hash__(self)
 
     def __call__(self, tokens, index):
-        try:
-            if self == tokens[index]:
-                # print(tokens[index])
-                return Graft(self.token, index + 1)
-        except IndexError:
-            pass
+        if index < len(tokens) and self == tokens[index]:
+            return Graft(self.token, index + 1)
         return None
 
 
-class TagGrafter(Grafter):
-    """TokenGrafter, but only matches tags."""
+class TagsParser(BaseParser):
+    """ItemParser, but only matches tags."""
     __slots__ = ('tag',)
 
     def __init__(self, tag):
@@ -269,7 +259,7 @@ class TagGrafter(Grafter):
             return self.tag == other.tag
         except AttributeError:
             raise TypeError(
-                'Can\'t compare tag of {}'.format(other.__class__.__name__)
+                f'Can\'t compare tag of {other.__class__.__name__}'
                 )
 
     def __hash__(self):
@@ -277,16 +267,12 @@ class TagGrafter(Grafter):
         return object.__hash__(self)
 
     def __call__(self, tokens, index):
-        try:
-            if self == tokens[index]:
-                # print(tokens[index])
-                return Graft(tokens[index].token, index + 1)
-        except IndexError:
-            pass
+        if index < len(tokens) and self.tag == tokens[index].tag:
+            return Graft(tokens[index].token, index + 1)
         return None
 
 
-class EnsureGraft(Grafter):
+class OptionParser(BaseParser):
     """Guarantees that the result of a graft evaluation is a Graft object;
     if the evaluation fails the graft object's value is set to None.
 
@@ -301,7 +287,7 @@ class EnsureGraft(Grafter):
         return self.graft(tokens, index) or Graft(None, index)
 
 
-class Repeater(Grafter):
+class RepeatParser(BaseParser):
     """A grafter that will apply itself repeatedly until failure,
     returning the list of all grafts created from iteration.
 
@@ -316,14 +302,13 @@ class Repeater(Grafter):
         grafts = []
         graft = self.graft(tokens, index)
         while graft:
-            print('Parsed:', graft.value)
             grafts.append(graft.value)
             index = graft.index
             graft = self.graft(tokens, index)
         return Graft(grafts, index)
 
 
-class LazyGrafter(Grafter):
+class LazierParser(BaseParser):
     """A grafter wrapper that takes a function returning a grafter,
     instead of a grafter itself. When called the first time, it will
     create its grafter from the function.
@@ -337,7 +322,7 @@ class LazyGrafter(Grafter):
         self.grafter = None
 
     def __repr__(self):
-        return '{}({})'.format(self.__class__.__name__, self.grafter_func)
+        return f'{self.__class__.__name__}({self.grafter_func})'
 
     def __call__(self, tokens, index):
         if not self.grafter:
@@ -345,7 +330,7 @@ class LazyGrafter(Grafter):
         return self.grafter(tokens, index)
 
 
-class StrictGrafter(Grafter):
+class ScriptParser(BaseParser):
     """A grafter that must evaluate every token in the token list
     provided to it in order to return a graft, otherwise returns None.
 
@@ -359,13 +344,9 @@ class StrictGrafter(Grafter):
     def __call__(self, tokens, index):
         graft = self.grafter(tokens, index)
         if graft.index == len(tokens):
-            print('Final:\n', graft.value, '\n', sep='')
+            # print('Final:\n', graft.value, '\n', sep='')
             return graft
-        else:
-            print(
-                'Parser error: Starting from {} on line {}'.format(
-                    tokens[graft.index].token, 
-                    tokens[graft.index].line,
-                    )
-                )
-        return None
+        token = tokens[graft.index]
+        raise SyntaxError(
+            f'Starting from {token.token} on line {token.line}\n'
+            )

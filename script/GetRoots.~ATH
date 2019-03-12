@@ -1,0 +1,13 @@
+//Quadratic formula, assumes all input are valid
+
+PROCREATE LOOP 0;
+~ATH(LOOP) {
+	input A "A: ";
+	input B "B: ";
+	input C "C: ";
+	REPLICATE R -B / (2 * A);
+	REPLICATE I ((B * B - (4 * A * C)) ^ 0.5) / (2 * A);
+	print ("The roots of the quadratic equation ~dx^2 + ~dx + ~d are ~.4f and ~.4f.", A, B, C, R + I, R - I);
+	LOOP.DIE();
+} EXECUTE(NULL);
+THIS.DIE();
